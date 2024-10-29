@@ -3,8 +3,13 @@ using PdfSharp.Pdf;
 using TestingHtmlToPdfLibraries.Converters;
 using static Utils;
 using TestingHtmlToPdfLibraries;
+using TestingHtmlToPdfLibraries.Services;
+using System.IO.Compression;
+using System.Collections.Generic;
+using System.Diagnostics;
 
 Console.WriteLine("HTML to PDF Conversion Test App");
+
 
 //// Replace mergevalues
 var html = InsertMergeValues.InsertMergeValueses(
@@ -23,21 +28,86 @@ var html = InsertMergeValues.InsertMergeValueses(
     }
 );
 
+using var pdfService = new PdfService();
+
+List<(string fileName, Stream fileContent)> files = new();
+
+var sw = new Stopwatch();
+
+sw.Start();
+for (int i = 0; i < 1000; i++)
+{
+   var pdfStream =  await pdfService.ConvertToPdfStreamAsync(GetHtmlString());
+    files.Add(($"test_{i}.pdf", pdfStream));
+}
+var en = sw.Stop;
+string dateTime = DateTime.UtcNow.AddHours(2).ToString("dd-MM-HH-mm");
+
+string fileToWriteTo = $"C:/pdf_zip_test_{dateTime}.zip";
+
+using MemoryStream memoryStream = ZipMemoryFiles(files);
+using Stream streamToWriteTo = File.Open(fileToWriteTo, FileMode.Create);
+
+memoryStream.Position = 0;
+await memoryStream.CopyToAsync(streamToWriteTo);
+
+
+
+static MemoryStream ZipMemoryFiles(IEnumerable<(string fileName, Stream fileContent)> inMemoryFiles)
+{
+    // Create a MemoryStream to hold the zip archive in memory
+    MemoryStream zipStream = new MemoryStream();
+
+    // Create the zip archive in the MemoryStream
+    using (ZipArchive archive = new ZipArchive(zipStream, ZipArchiveMode.Create, true))
+    {
+        foreach (var file in inMemoryFiles)
+        {
+            // Create an entry in the zip for each file
+            ZipArchiveEntry entry = archive.CreateEntry(file.fileName);
+
+            // Write the content of the in-memory file to the entry
+            using (Stream entryStream = entry.Open())
+            {
+                // Reset the position of the incoming stream to the beginning, just in case
+                if (file.fileContent.CanSeek)
+                {
+                    file.fileContent.Seek(0, SeekOrigin.Begin);
+                }
+
+                // Copy the file content stream to the zip entry stream
+                file.fileContent.CopyTo(entryStream);
+            }
+
+            Console.WriteLine($"Added {file.fileName} to the zip archive.");
+        }
+    }
+
+    // Reset the position of the MemoryStream to the beginning so it can be read
+    zipStream.Seek(0, SeekOrigin.Begin);
+
+    // Return the MemoryStream representing the zip file
+    return zipStream;
+}
+
+Console.WriteLine("Fine");
 //// Test PuppeteerSharp Conversion
-var stream = await PuppeteerSharpConverter.ConvertToPdfAsync(html);
+//var stream = await PuppeteerSharpConverter.ConvertToPdfAsync(html);
 
-PdfDocument pdfDocument = PdfReader.Open(stream, PdfDocumentOpenMode.Modify);
+//var length = stream.Length;
+//PdfDocument pdfDocument = PdfReader.Open(stream, PdfDocumentOpenMode.Modify);
 
-// Modify the PDF metadata (Info dictionary)
-pdfDocument.Info.Title = "My Custom Title";
-pdfDocument.Info.Author = "";
-pdfDocument.Info.Subject = "Generated PDF with Metadata";
-pdfDocument.Info.Keywords = "Addoro:true,Channel:Postal,CustomerId 12345,ID:347563476,Name:Winnie the Winorg,Address1:hundremeterskogen 1,Address2:,PostalCode:0100,City:Skogen";
+//// Modify the PDF metadata (Info dictionary)
+//pdfDocument.Info.Title = "My Custom Title";
+//pdfDocument.Info.Author = "";
+//pdfDocument.Info.Subject = "Generated PDF with Metadata";
+//pdfDocument.Info.Keywords = "Addoro:true,Channel:Postal,CustomerId 12345,ID:347563476,Name:Winnie the Winorg,Address1:hundremeterskogen 1,Address2:,PostalCode:0100,City:Skogen";
 
-string outputPath = $"C:/outputstream_{DateTime.Now.ToString("HH_mm_ss")}.pdf";
-pdfDocument.Save(outputPath);
+//var length2 = stream.Length;
+//string outputPath = $"C:/outputstream_{DateTime.Now.ToString("HH_mm_ss")}.pdf";
+//pdfDocument.Save(outputPath);
 
-Console.WriteLine("PDFs generated successfully.");
+//Console.WriteLine("PDFs generated successfully.");
 
 
 static class Utils
